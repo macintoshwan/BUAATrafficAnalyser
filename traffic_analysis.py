@@ -58,12 +58,12 @@ ip_color_map = dict(zip(unique_ips, colors))
 
 print(f"📊 开始绘制 {len(df)} 条记录...")
 
-# 创建图表
-fig, ax = plt.subplots(figsize=(20, 10))
+# 创建图表（增加高度）
+fig, ax = plt.subplots(figsize=(24, 14))
 
-# 为每条记录绘制矩形
-cumulative_height = 0
-daily_cumulative = {}  # 记录每天的累积高度
+# 为每条记录绘制矩形和统计每日流量
+daily_cumulative = {}  # 记录每天的累积高度（用于绘制矩形的y位置）
+daily_traffic = {}  # 记录每天的实际流量总和（用于绘制黑线）
 
 for idx, row in df.iterrows():
     start_date = row['上线时间']
@@ -74,45 +74,42 @@ for idx, row in df.iterrows():
     # 计算时间跨度（以天为单位）
     duration = (end_date - start_date).total_seconds() / 86400  # 转换为天
     
-    # 确保至少有一个最小宽度
-    if duration < 0.01:  # 少于15分钟的会话至少显示为0.01天
-        duration = 0.01
+    # 确保至少有一个最小宽度，避免除以0
+    if duration < 0.0001:  # 少于10秒的会话至少显示为0.0001天
+        duration = 0.0001
+    
+    # 计算流量速率（GB/天），这样矩形面积 = 宽度 × 高度 = 时长 × 速率 = 流量
+    traffic_rate = traffic / duration
     
     # 获取该记录起始日期
     start_date_only = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
     
-    # 如果这一天还没有记录，初始化累积高度为0
+    # 初始化该日期的累积高度和流量统计
     if start_date_only not in daily_cumulative:
         daily_cumulative[start_date_only] = 0
+    if start_date_only not in daily_traffic:
+        daily_traffic[start_date_only] = 0
     
-    # 在当前累积高度上绘制矩形
+    # 在当前累积高度上绘制矩形（高度为流量速率）
     rect = Rectangle((mdates.date2num(start_date), daily_cumulative[start_date_only]),
-                     duration, traffic,
+                     duration, traffic_rate,
                      facecolor=ip_color_map[ip], 
                      edgecolor='white', 
                      linewidth=0.5,
                      alpha=0.7)
     ax.add_patch(rect)
     
-    # 更新该日期的累积高度
-    daily_cumulative[start_date_only] += traffic
-    
-    # 如果跨天，需要为后续的天也更新累积高度
-    current_date = start_date_only + timedelta(days=1)
-    end_date_only = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    while current_date <= end_date_only:
-        if current_date not in daily_cumulative:
-            daily_cumulative[current_date] = 0
-        daily_cumulative[current_date] += traffic
-        current_date += timedelta(days=1)
+    # 更新该日期的累积高度（用于堆叠，累加速率）和实际流量（只计算一次）
+    daily_cumulative[start_date_only] += traffic_rate
+    daily_traffic[start_date_only] += traffic
 
 # 计算每日总流量用于绘制顶部轮廓线
-sorted_dates = sorted(daily_cumulative.keys())
-daily_totals = [daily_cumulative[d] for d in sorted_dates]
+sorted_dates = sorted(daily_traffic.keys())
+daily_totals = [daily_traffic[d] for d in sorted_dates]
 
 # 绘制每日累积流量的轮廓线
 ax.plot(sorted_dates, daily_totals, color='black', linewidth=2, 
-        linestyle='-', alpha=0.8, label='每日累积流量', zorder=1000)
+        linestyle='-', alpha=0.8, label='每日总流量', zorder=1000)
 
 # 设置标题和标签
 min_date = df['上线时间'].min()
@@ -123,7 +120,7 @@ ax.set_title('校园网流量累积图 - 每条记录可视化\n从 {} 到 {}'.f
 ), fontsize=18, fontweight='bold', pad=20)
 
 ax.set_xlabel('日期', fontsize=14, fontweight='bold')
-ax.set_ylabel('流量 (GB)', fontsize=14, fontweight='bold')
+ax.set_ylabel('流量速率 (GB/天)', fontsize=14, fontweight='bold')
 
 # 设置x轴范围和格式
 ax.set_xlim(mdates.date2num(min_date - timedelta(days=1)), 
@@ -149,9 +146,9 @@ avg_daily = total_traffic / days if days > 0 else 0
 max_single = df['流量_GB'].max()
 max_daily = max(daily_totals) if daily_totals else 0
 
-stats_text = f'总流量: {total_traffic:.2f} GB\n时间跨度: {days} 天\n日均流量: {avg_daily:.2f} GB\n最大单次: {max_single:.2f} GB\n最高日累积: {max_daily:.2f} GB\nIP地址数: {len(unique_ips)}'
+stats_text = f'总流量: {total_traffic:.2f} GB\n时间跨度: {days} 天\n日均流量: {avg_daily:.2f} GB\n最大单次: {max_single:.2f} GB\n最高日累积: {max_daily:.2f} GB\nIP地址数: {len(unique_ips)}\n\n📐 矩形面积 = 流量大小'
 ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
-        fontsize=11, verticalalignment='top', horizontalalignment='left',
+        fontsize=12, verticalalignment='top', horizontalalignment='left',
         bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9))
 
 # 添加IP图例（只显示前10个最常用的IP）
@@ -159,11 +156,12 @@ ip_counts = df['IP地址'].value_counts().head(10)
 legend_elements = [plt.Rectangle((0,0),1,1, facecolor=ip_color_map[ip], 
                                  edgecolor='white', alpha=0.7, label=f'{ip} ({count}次)')
                   for ip, count in ip_counts.items()]
-ax.legend(handles=legend_elements, loc='upper right', fontsize=9, 
+ax.legend(handles=legend_elements, loc='upper right', fontsize=10, 
           title='主要IP地址（使用次数）', framealpha=0.9, ncol=1)
 
-# 调整y轴范围，留出一些空间
-ax.set_ylim(0, max(daily_totals) * 1.05 if daily_totals else 10)
+# 调整y轴范围，留出足够空间
+y_max = max(daily_cumulative.values()) if daily_cumulative else 10
+ax.set_ylim(0, y_max * 1.1)  # 上方留10%的空间
 
 # 调整布局
 plt.tight_layout()
