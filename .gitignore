@@ -41,7 +41,7 @@ ENV/
 *.svg
 
 # 数据文件（如果不想提交原始CSV）
-output.csv
+*.csv
 
 # Jupyter Notebook
 .ipynb_checkpoints
