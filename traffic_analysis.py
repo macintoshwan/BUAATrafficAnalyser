@@ -151,13 +151,13 @@ ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
         fontsize=12, verticalalignment='top', horizontalalignment='left',
         bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9))
 
-# 添加IP图例（只显示前10个最常用的IP）
-ip_counts = df['IP地址'].value_counts().head(10)
+# 添加IP图例（按流量排序，显示前10个）
+ip_traffic = df.groupby('IP地址')['流量_GB'].sum().sort_values(ascending=False).head(10)
 legend_elements = [plt.Rectangle((0,0),1,1, facecolor=ip_color_map[ip], 
-                                 edgecolor='white', alpha=0.7, label=f'{ip} ({count}次)')
-                  for ip, count in ip_counts.items()]
+                                 edgecolor='white', alpha=0.7, label=f'{ip} ({traffic:.2f}GB)')
+                  for ip, traffic in ip_traffic.items()]
 ax.legend(handles=legend_elements, loc='upper right', fontsize=10, 
-          title='主要IP地址（使用次数）', framealpha=0.9, ncol=1)
+          title='主要IP地址（总流量）', framealpha=0.9, ncol=1)
 
 # 调整y轴范围，留出足够空间
 y_max = max(daily_cumulative.values()) if daily_cumulative else 10
